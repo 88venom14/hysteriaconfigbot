@@ -13,7 +13,6 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-// NewHTTPClient создаёт HTTP-клиент с поддержкой прокси и увеличенными таймаутами
 func NewHTTPClient() *http.Client {
 	client := &http.Client{
 		Timeout: consts.HTTPTimeout,
@@ -23,7 +22,6 @@ func NewHTTPClient() *http.Client {
 		},
 	}
 
-	// Проверка HTTP/HTTPS прокси
 	proxyURL := os.Getenv("HTTPS_PROXY")
 	if proxyURL == "" {
 		proxyURL = os.Getenv("HTTP_PROXY")
@@ -41,7 +39,6 @@ func NewHTTPClient() *http.Client {
 		return client
 	}
 
-	// Проверка SOCKS5 прокси
 	socks5Proxy := os.Getenv("SOCKS5_PROXY")
 	if socks5Proxy != "" {
 		dialer, err := proxy.SOCKS5("tcp", socks5Proxy, nil, proxy.Direct)

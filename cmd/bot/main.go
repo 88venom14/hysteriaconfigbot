@@ -20,9 +20,7 @@ func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 }
 
-// loadEnv загружает переменные окружения из .env файла
 func loadEnv() {
-	// Пытаемся загрузить .env из директории исполняемого файла
 	exePath, err := os.Executable()
 	if err != nil {
 		log.Printf("[WARN] Failed to get executable path: %v", err)
@@ -34,13 +32,11 @@ func loadEnv() {
 		}
 	}
 
-	// Фолбэк 1: пытаемся загрузить из текущей рабочей директории
 	if err := godotenv.Load(".env"); err == nil {
 		log.Printf("[INFO] Loaded .env from current directory")
 		return
 	}
 
-	// Фолбэк 2: пытаемся загрузить из родительской директории (для go run из cmd/bot)
 	if err := godotenv.Load("../../.env"); err == nil {
 		log.Printf("[INFO] Loaded .env from ../../.env")
 		return
@@ -50,26 +46,21 @@ func loadEnv() {
 }
 
 func main() {
-	// Загрузка переменных окружения
 	loadEnv()
 
-	// Проверка токена
 	token := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if token == "" {
 		log.Printf("[ERROR] Token not found in TELEGRAM_BOT_TOKEN env variable")
 		log.Fatalf("[FATAL] Bot initialization failed: missing token")
 	}
 
-	// Создание HTTP-клиента с поддержкой прокси
 	httpClient := client.NewHTTPClient()
 
-	// Подключение к Telegram API
 	bot, err := tgbotapi.NewBotAPIWithClient(token, "https://api.telegram.org/bot%s/%s", httpClient)
 	if err != nil {
 		log.Fatalf("[FATAL] Failed to connect to Telegram API: %v", err)
 	}
 
-	// Установка команд бота
 	commands := tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{Command: "start", Description: "Запустить бота"},
 		tgbotapi.BotCommand{Command: "goconfig", Description: "Создать YAML-конфиг Hysteria2"},
@@ -82,24 +73,19 @@ func main() {
 
 	log.Printf("[INFO] Bot started: %s", bot.Self.UserName)
 
-	// Инициализация состояния и обработчика
 	botState := models.NewBotState()
 	handler := handlers.NewHandler(bot, botState)
 
-	// Настройка получения обновлений
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = consts.PollingTimeout
 	updates := bot.GetUpdatesChan(updateConfig)
 
-	// Основной цикл обработки событий
 	for update := range updates {
-		// Обработка callback query (нажатие кнопок)
 		if update.CallbackQuery != nil {
 			handler.HandleCallback(update.CallbackQuery)
 			continue
 		}
 
-		// Пропуск пустых сообщений
 		if update.Message == nil {
 			continue
 		}
@@ -109,7 +95,6 @@ func main() {
 
 		log.Printf("[INFO] [CHAT_ID:%d] Received message: %s", chatID, text)
 
-		// Проверка шага создания конфига (приоритет)
 		step := botState.GetConfigStep(chatID)
 		switch step {
 		case models.StepWaitingServer:
@@ -138,22 +123,14 @@ func main() {
 			continue
 		}
 
-		// Обработка команд с эмодзи (от кнопок)
-		cleanText := strings.TrimSpace(text)
-		cleanText = strings.TrimPrefix(cleanText, "⚙️ ")
-		cleanText = strings.TrimPrefix(cleanText, "🔑 ")
-		cleanText = strings.TrimPrefix(cleanText, "📁 ")
-		cleanText = strings.TrimPrefix(cleanText, "❓ ")
-
-		// Обработка команд
 		switch {
-		case text == "/start" || cleanText == "/start":
+		case text == "/start":
 			handler.HandleStart(chatID)
-		case text == "/help" || cleanText == "/help":
+		case text == "/help":
 			handler.HandleHelp(chatID)
-		case text == "/config" || cleanText == "/config":
+		case text == "/config":
 			handler.HandleConfig(chatID)
-		case text == "/goconfig" || cleanText == "/goconfig":
+		case text == "/goconfig":
 			handler.HandleGoConfig(chatID)
 		default:
 			msg := tgbotapi.NewMessage(chatID, "Используйте /goconfig для создания конфига")

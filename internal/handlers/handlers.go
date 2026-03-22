@@ -14,13 +14,11 @@ import (
 	"hysconfigbot/pkg/models"
 )
 
-// Handler обрабатывает команды бота
 type Handler struct {
 	Bot   *tgbotapi.BotAPI
 	State *models.BotState
 }
 
-// NewHandler создаёт новый обработчик
 func NewHandler(bot *tgbotapi.BotAPI, state *models.BotState) *Handler {
 	return &Handler{
 		Bot:   bot,
@@ -28,18 +26,17 @@ func NewHandler(bot *tgbotapi.BotAPI, state *models.BotState) *Handler {
 	}
 }
 
-// HandleStart обрабатывает команду /start
 func (h *Handler) HandleStart(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotWelcomeMessage)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 
 	keyboard := tgbotapi.NewReplyKeyboard(
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("🔑 /goconfig"),
-			tgbotapi.NewKeyboardButton("📁 /config"),
+			tgbotapi.NewKeyboardButton("/goconfig"),
+			tgbotapi.NewKeyboardButton("/config"),
 		),
 		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("❓ /help"),
+			tgbotapi.NewKeyboardButton("/help"),
 		),
 	)
 	keyboard.ResizeKeyboard = true
@@ -48,14 +45,12 @@ func (h *Handler) HandleStart(chatID int64) {
 	h.send(msg)
 }
 
-// HandleHelp обрабатывает команду /help
 func (h *Handler) HandleHelp(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotHelpMessage)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	h.send(msg)
 }
 
-// HandleGoConfig обрабатывает команду /goconfig
 func (h *Handler) HandleGoConfig(chatID int64) {
 	h.State.SetConfigStep(chatID, models.StepWaitingServer)
 	msg := tgbotapi.NewMessage(chatID, consts.BotRequestServerMsg)
@@ -65,7 +60,6 @@ func (h *Handler) HandleGoConfig(chatID int64) {
 	}
 }
 
-// HandleServerAddress обрабатывает ввод адреса сервера
 func (h *Handler) HandleServerAddress(chatID int64, server string) {
 	if !generator.IsValidServerAddress(server) {
 		msg := tgbotapi.NewMessage(chatID, consts.BotInvalidServerMsg)
@@ -83,14 +77,12 @@ func (h *Handler) HandleServerAddress(chatID int64, server string) {
 	}
 }
 
-// HandleUserName обрабатывает ввод имени пользователя
 func (h *Handler) HandleUserName(chatID int64, userName string) {
 	defer func() {
 		h.State.SetWaitingForName(chatID, false)
 		h.State.ClearUserConfigState(chatID)
 	}()
 
-	// Получаем адрес сервера
 	server, exists := h.State.GetUserServer(chatID)
 	if !exists {
 		log.Printf("[ERROR] [CHAT_ID:%d] Server address not found", chatID)
@@ -112,7 +104,6 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 		return
 	}
 
-	// Отправка учётных данных
 	credentialsMsg := fmt.Sprintf("%s: %s", userName, password)
 	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("%s\n\n%s", consts.BotConfigCreatedMsg, credentialsMsg))
 	if _, err := h.Bot.Send(msg); err != nil {
@@ -121,21 +112,18 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 		return
 	}
 
-	// Отправка конфига в code block
 	configCodeMsg := tgbotapi.NewMessage(chatID, fmt.Sprintf("```yaml\n%s\n```", config))
 	configCodeMsg.ParseMode = tgbotapi.ModeMarkdown
 	if _, err := h.Bot.Send(configCodeMsg); err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send config as code block: %v", chatID, err)
 	}
 
-	// Отправка файла
 	if err := h.sendConfigFile(chatID, userName, config); err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send config file: %v", chatID, err)
 		h.sendErrorMessage(chatID)
 		return
 	}
 
-	// Сохраняем конфиг в хранилище только после успешной отправки
 	configData := models.ConfigData{
 		Name:     userName,
 		Password: password,
@@ -154,13 +142,11 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 		return
 	}
 
-	// Кнопка для повторной генерации
 	h.sendRetryButton(chatID)
 
 	log.Printf("[INFO] [CHAT_ID:%d] Config sent to user: %s (server: %s)", chatID, userName, server)
 }
 
-// HandleConfig обрабатывает команду /config
 func (h *Handler) HandleConfig(chatID int64) {
 	configs, exists := h.State.GetConfigs(chatID)
 	if !exists || len(configs) == 0 {
@@ -175,7 +161,7 @@ func (h *Handler) HandleConfig(chatID int64) {
 
 	var keyboardRows [][]tgbotapi.InlineKeyboardButton
 	for i, cfg := range configs {
-		configList.WriteString(fmt.Sprintf("🔹 **%s** (`%s`)\n", cfg.Name, cfg.Password))
+		configList.WriteString(fmt.Sprintf("🔹 **%s**: `%s`\n", cfg.Name, cfg.Password))
 		configList.WriteString(fmt.Sprintf("   🌐 Сервер: `%s`\n\n", cfg.Server))
 
 		button := tgbotapi.NewInlineKeyboardButtonData(
@@ -185,7 +171,6 @@ func (h *Handler) HandleConfig(chatID int64) {
 		keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(button))
 	}
 
-	// Добавляем кнопку очистки
 	if len(configs) > 0 {
 		keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🗑 Очистить историю", "clear_confirm"),
@@ -198,7 +183,6 @@ func (h *Handler) HandleConfig(chatID int64) {
 	h.send(msg)
 }
 
-// HandleClearConfirm показывает подтверждение очистки
 func (h *Handler) HandleClearConfirm(chatID int64) {
 	count := h.State.GetConfigsCount(chatID)
 	if count == 0 {
@@ -219,7 +203,6 @@ func (h *Handler) HandleClearConfirm(chatID int64) {
 	h.send(msg)
 }
 
-// HandleClearExecute выполняет очистку конфигов
 func (h *Handler) HandleClearExecute(chatID int64) {
 	h.State.ClearConfigs(chatID)
 	msg := tgbotapi.NewMessage(chatID, consts.BotClearDoneMessage)
@@ -227,9 +210,7 @@ func (h *Handler) HandleClearExecute(chatID int64) {
 	log.Printf("[INFO] [CHAT_ID:%d] Configs cleared", chatID)
 }
 
-// HandleDownload обрабатывает скачивание конфига
 func (h *Handler) HandleDownload(chatID int64, configIndex int) {
-	// Проверка на отрицательный индекс
 	if configIndex < 0 {
 		log.Printf("[ERROR] [CHAT_ID:%d] Invalid config index: %d (negative)", chatID, configIndex)
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка: неверный индекс конфига")
@@ -255,7 +236,6 @@ func (h *Handler) HandleDownload(chatID int64, configIndex int) {
 	log.Printf("[INFO] [CHAT_ID:%d] Config downloaded: %s", chatID, cfg.Name)
 }
 
-// HandleCallback обрабатывает callback query (кнопки)
 func (h *Handler) HandleCallback(callbackQuery *tgbotapi.CallbackQuery) {
 	chatID := callbackQuery.Message.Chat.ID
 
@@ -287,7 +267,6 @@ func (h *Handler) HandleCallback(callbackQuery *tgbotapi.CallbackQuery) {
 	}
 }
 
-// send отправляет сообщение с логированием ошибок
 func (h *Handler) send(msg tgbotapi.Chattable) {
 	result, err := h.Bot.Send(msg)
 	if err != nil {
@@ -297,7 +276,6 @@ func (h *Handler) send(msg tgbotapi.Chattable) {
 	}
 }
 
-// sendErrorMessage отправляет сообщение об ошибке
 func (h *Handler) sendErrorMessage(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotErrorGenericMsg)
 	if _, err := h.Bot.Send(msg); err != nil {
@@ -305,20 +283,16 @@ func (h *Handler) sendErrorMessage(chatID int64) {
 	}
 }
 
-// sendConfigFile отправляет файл конфига
 func (h *Handler) sendConfigFile(chatID int64, userName, config string) error {
-	// Создаём временный файл с именем пользователя
 	fileName := fmt.Sprintf("%s_config.yaml", userName)
 	tmpDir := os.TempDir()
 	tmpFilePath := filepath.Join(tmpDir, fileName)
 
-	// Записываем конфиг
 	if err := os.WriteFile(tmpFilePath, []byte(config), 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	defer os.Remove(tmpFilePath)
 
-	// Отправляем файл
 	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpFilePath))
 	_, err := h.Bot.Send(doc)
 	if err != nil {
@@ -328,7 +302,6 @@ func (h *Handler) sendConfigFile(chatID int64, userName, config string) error {
 	return nil
 }
 
-// sendRetryButton отправляет кнопку повторной генерации
 func (h *Handler) sendRetryButton(chatID int64) {
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -340,7 +313,6 @@ func (h *Handler) sendRetryButton(chatID int64) {
 	h.send(msg)
 }
 
-// answerCallback отвечает на callback query
 func (h *Handler) answerCallback(callbackID, text string) {
 	callback := tgbotapi.NewCallback(callbackID, text)
 	if _, err := h.Bot.Request(callback); err != nil {

@@ -10,7 +10,6 @@ import (
 	"text/template"
 )
 
-// ConfigTemplate — шаблон YAML-конфигурации Hysteria2
 const ConfigTemplate = `mixed-port: 7890
 allow-lan: true
 tcp-concurrent: true
@@ -106,14 +105,12 @@ rules:
   - MATCH,🌍 VPN
 `
 
-// ConfigParams параметры для генерации конфига
 type ConfigParams struct {
 	Server   string
 	Port     int
 	Password string
 }
 
-// GeneratePassword генерирует случайный пароль (32 символа hex)
 func GeneratePassword() (string, error) {
 	bytes := make([]byte, consts.PasswordByteLength)
 	if _, err := io.ReadFull(rand.Reader, bytes); err != nil {
@@ -122,7 +119,6 @@ func GeneratePassword() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-// GenerateConfig генерирует YAML-конфиг с подстановкой имени, пароля и сервера
 func GenerateConfig(userName, password, server string) (string, error) {
 	passwordField := fmt.Sprintf("%s:%s", userName, password)
 
@@ -145,8 +141,6 @@ func GenerateConfig(userName, password, server string) (string, error) {
 	return builder.String(), nil
 }
 
-// IsValidLatinName проверяет, что имя содержит только латинские буквы и цифры
-// Максимальная длина имени — 32 символа
 func IsValidLatinName(name string) bool {
 	if len(name) == 0 || len(name) > consts.MaxNameLength {
 		return false
@@ -159,14 +153,11 @@ func IsValidLatinName(name string) bool {
 	return true
 }
 
-// IsValidServerAddress проверяет формат адреса сервера
-// Допускаются доменные имена, IP-адреса и простые имена
 func IsValidServerAddress(server string) bool {
 	if len(server) == 0 || len(server) > consts.MaxServerLength {
 		return false
 	}
 
-	// Разрешаем: буквы, цифры, точки, дефисы, подчёркивания
 	for _, r := range server {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 			(r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_') {

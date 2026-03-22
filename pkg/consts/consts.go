@@ -2,39 +2,28 @@ package consts
 
 import "time"
 
-// Константы бота
 const (
-	// Таймаут polling для Telegram API
 	PollingTimeout = 60
 
-	// Таймауты HTTP-клиента
-	HTTPTimeout         = 60 * time.Second
-	TLSHandshakeTimeout = 30 * time.Second
-	ResponseTimeout     = 30 * time.Second
+	HTTPTimeout         = 120 * time.Second
+	TLSHandshakeTimeout = 60 * time.Second
+	ResponseTimeout     = 60 * time.Second
 )
 
-// Константы генератора
 const (
-	// PasswordByteLength длина пароля в байтах (32 hex символа)
 	PasswordByteLength = 16
 
-	// DefaultPort порт по умолчанию для Hysteria2
 	DefaultPort = 443
 
-	// MaxNameLength максимальная длина имени пользователя
 	MaxNameLength = 32
 
-	// MaxServerLength максимальная длина адреса сервера
 	MaxServerLength = 253
 )
 
-// Лимиты
 const (
-	// MaxConfigsPerUser максимальное количество конфигов на пользователя
 	MaxConfigsPerUser = 10
 )
 
-// Сообщения бота
 const (
 	BotWelcomeMessage    = "Привет! Я бот для генерации конфигов Hysteria2.\n\n📋 Доступные команды:\n🔑 /goconfig — создать конфиг\n📁 /config — мои конфиги\n❓ /help — справка"
 	BotRequestServerMsg  = "🌐 Введите адрес сервера (например, Example.com):"
@@ -59,7 +48,7 @@ const (
 	BotNoConfigsMessage    = "У вас пока нет созданных конфигов.\n\nИспользуйте /goconfig для создания."
 	BotConfigsListMessage  = "📂 **Ваши конфиги:**\n\n"
 	BotDownloadButton      = "📥 Скачать"
-	BotClearConfirmMessage = "🗑 Вы уверены, что хотите удалить все ваши конфиги?\n\nЭто действие нельзя отменить."
+	BotClearConfirmMessage = "🗑 Вы уверены, что хотите удалить все ваши конфиги?\n\nБудет удалено конфигов: %d\n\nЭто действие нельзя отменить."
 	BotClearDoneMessage    = "✅ Все конфиги удалены."
 	BotClearButton         = "🗑 Да, удалить"
 	BotCancelButton        = "❌ Отмена"

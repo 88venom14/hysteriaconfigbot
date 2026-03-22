@@ -5,6 +5,7 @@
 *.so
 *.dylib
 hysconfigbot.exe
+DEPLOY.md
 
 # Test binary
 *.test
