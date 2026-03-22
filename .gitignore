@@ -1,0 +1,31 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+hysconfigbot.exe
+
+# Test binary
+*.test
+
+# Go coverage
+*.out
+
+# Dependencies
+vendor/
+go.work
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
