@@ -66,8 +66,8 @@ proxies:
     password: "{{.Password}}"
     sni: {{.Server}}
     skip-cert-verify: false
-    up: 0
-    down: 0
+    up: {{.Up}}
+    down: {{.Down}}
 
 proxy-groups:
   - name: 🌍 VPN
@@ -109,6 +109,8 @@ type ConfigParams struct {
 	Server   string
 	Port     int
 	Password string
+	Up       int
+	Down     int
 }
 
 func GeneratePassword() (string, error) {
@@ -119,13 +121,15 @@ func GeneratePassword() (string, error) {
 	return hex.EncodeToString(bytes), nil
 }
 
-func GenerateConfig(userName, password, server string) (string, error) {
+func GenerateConfig(userName, password, server string, up, down int) (string, error) {
 	passwordField := fmt.Sprintf("%s:%s", userName, password)
 
 	params := ConfigParams{
 		Server:   server,
 		Port:     consts.DefaultPort,
 		Password: passwordField,
+		Up:       up,
+		Down:     down,
 	}
 
 	tmpl, err := template.New("config").Parse(ConfigTemplate)

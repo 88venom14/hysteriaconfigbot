@@ -12,7 +12,6 @@ import (
 	"hysconfigbot/internal/handlers"
 	"hysconfigbot/pkg/client"
 	"hysconfigbot/pkg/consts"
-	"hysconfigbot/pkg/generator"
 	"hysconfigbot/pkg/models"
 )
 
@@ -66,6 +65,7 @@ func main() {
 		tgbotapi.BotCommand{Command: "goconfig", Description: "Создать YAML-конфиг Hysteria2"},
 		tgbotapi.BotCommand{Command: "config", Description: "Показать мои конфиги"},
 		tgbotapi.BotCommand{Command: "help", Description: "Показать справку"},
+		tgbotapi.BotCommand{Command: "stop", Description: "Отменить создание конфига"},
 	)
 	if _, err := bot.Request(commands); err != nil {
 		log.Printf("[WARN] Failed to set bot commands: %v", err)
@@ -95,6 +95,12 @@ func main() {
 
 		log.Printf("[INFO] [CHAT_ID:%d] Received message: %s", chatID, text)
 
+		// Обработка команды /stop на любом этапе
+		if text == "/stop" {
+			handler.HandleStop(chatID)
+			continue
+		}
+
 		step := botState.GetConfigStep(chatID)
 		switch step {
 		case models.StepWaitingServer:
@@ -113,13 +119,23 @@ func main() {
 				bot.Send(msg)
 				continue
 			}
-			if !generator.IsValidLatinName(userName) {
-				msg := tgbotapi.NewMessage(chatID, "❌ Имя должно содержать только латинские буквы (a-z, A-Z) и цифры (0-9), макс. 32 символа.\n\nПожалуйста, введите имя повторно:")
-				msg.ParseMode = tgbotapi.ModeMarkdown
-				bot.Send(msg)
-				continue
-			}
 			handler.HandleUserName(chatID, userName)
+			continue
+		case models.StepWaitingSpeed:
+			// Если пользователь ввёл текст вместо нажатия кнопки
+			msg := tgbotapi.NewMessage(chatID, "❌ Пожалуйста, выберите скорость, нажав на одну из кнопок ниже:")
+			keyboard := tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(
+					tgbotapi.NewInlineKeyboardButtonData("🤖 Авто", "speed_auto"),
+					tgbotapi.NewInlineKeyboardButtonData("🔧 Свой вариант", "speed_custom"),
+				),
+			)
+			msg.ReplyMarkup = keyboard
+			bot.Send(msg)
+			continue
+		case models.StepWaitingCustomSpeed:
+			customSpeed := strings.TrimSpace(text)
+			handler.HandleCustomSpeed(chatID, customSpeed)
 			continue
 		}
 

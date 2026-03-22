@@ -14,6 +14,8 @@ const (
 	StepNone ConfigStep = iota
 	StepWaitingServer
 	StepWaitingName
+	StepWaitingSpeed
+	StepWaitingCustomSpeed
 )
 
 type ConfigData struct {
@@ -21,10 +23,15 @@ type ConfigData struct {
 	Password string
 	Config   string
 	Server   string
+	Up       int
+	Down     int
 }
 
 type UserConfigState struct {
 	Server string
+	Name   string
+	Up     int
+	Down   int
 }
 
 type BotState struct {
@@ -65,6 +72,25 @@ func (s *BotState) SetUserServer(chatID int64, server string) {
 	s.ConfigStates[chatID].Server = server
 }
 
+func (s *BotState) SetUserName(chatID int64, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ConfigStates[chatID] == nil {
+		s.ConfigStates[chatID] = &UserConfigState{}
+	}
+	s.ConfigStates[chatID].Name = name
+}
+
+func (s *BotState) SetUserSpeed(chatID int64, up, down int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ConfigStates[chatID] == nil {
+		s.ConfigStates[chatID] = &UserConfigState{}
+	}
+	s.ConfigStates[chatID].Up = up
+	s.ConfigStates[chatID].Down = down
+}
+
 func (s *BotState) GetUserServer(chatID int64) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -73,6 +99,26 @@ func (s *BotState) GetUserServer(chatID int64) (string, bool) {
 		return "", false
 	}
 	return state.Server, true
+}
+
+func (s *BotState) GetUserName(chatID int64) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, exists := s.ConfigStates[chatID]
+	if !exists || state == nil {
+		return "", false
+	}
+	return state.Name, true
+}
+
+func (s *BotState) GetUserSpeed(chatID int64) (int, int, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	state, exists := s.ConfigStates[chatID]
+	if !exists || state == nil {
+		return 0, 0, false
+	}
+	return state.Up, state.Down, true
 }
 
 func (s *BotState) ClearUserConfigState(chatID int64) {

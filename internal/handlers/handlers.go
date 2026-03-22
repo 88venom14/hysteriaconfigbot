@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -30,16 +31,16 @@ func (h *Handler) HandleStart(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotWelcomeMessage)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 
-	keyboard := tgbotapi.NewReplyKeyboard(
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("/goconfig"),
-			tgbotapi.NewKeyboardButton("/config"),
+	// Создаём inline-кнопки под сообщением
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔑 Создать конфиг", "btn_goconfig"),
+			tgbotapi.NewInlineKeyboardButtonData("📁 Мои конфиги", "btn_config"),
 		),
-		tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("/help"),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❓ Справка", "btn_help"),
 		),
 	)
-	keyboard.ResizeKeyboard = true
 	msg.ReplyMarkup = keyboard
 
 	h.send(msg)
@@ -48,6 +49,29 @@ func (h *Handler) HandleStart(chatID int64) {
 func (h *Handler) HandleHelp(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotHelpMessage)
 	msg.ParseMode = tgbotapi.ModeMarkdown
+
+	// Создаём inline-кнопки под сообщением
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔑 Создать конфиг", "btn_goconfig"),
+			tgbotapi.NewInlineKeyboardButtonData("📁 Мои конфиги", "btn_config"),
+		),
+	)
+	msg.ReplyMarkup = keyboard
+
+	h.send(msg)
+}
+
+func (h *Handler) HandleStop(chatID int64) {
+	// Очищаем состояние пользователя
+	h.State.ClearUserConfigState(chatID)
+
+	msg := tgbotapi.NewMessage(chatID, consts.BotStopMessage)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+
+	// Убираем клавиатуру
+	msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+
 	h.send(msg)
 }
 
@@ -78,17 +102,71 @@ func (h *Handler) HandleServerAddress(chatID int64, server string) {
 }
 
 func (h *Handler) HandleUserName(chatID int64, userName string) {
-	defer func() {
-		h.State.SetWaitingForName(chatID, false)
-		h.State.ClearUserConfigState(chatID)
-	}()
+	if !generator.IsValidLatinName(userName) {
+		msg := tgbotapi.NewMessage(chatID, consts.BotInvalidNameMsg)
+		msg.ParseMode = tgbotapi.ModeMarkdown
+		h.send(msg)
+		return
+	}
 
-	server, exists := h.State.GetUserServer(chatID)
-	if !exists {
+	h.State.SetUserName(chatID, userName)
+	h.State.SetConfigStep(chatID, models.StepWaitingSpeed)
+
+	msg := tgbotapi.NewMessage(chatID, consts.BotRequestSpeedMsg)
+
+	// Создаём кнопки для выбора скорости
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🤖 Авто", "speed_auto"),
+			tgbotapi.NewInlineKeyboardButtonData("🔧 Свой вариант", "speed_custom"),
+		),
+	)
+	msg.ReplyMarkup = keyboard
+
+	if _, err := h.Bot.Send(msg); err != nil {
+		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send message: %v", chatID, err)
+		h.State.SetConfigStep(chatID, models.StepNone)
+	}
+}
+
+func (h *Handler) HandleCustomSpeed(chatID int64, customSpeed string) {
+	// Парсим скорость в формате "UP DOWN"
+	parts := strings.Fields(customSpeed)
+	if len(parts) != 2 {
+		msg := tgbotapi.NewMessage(chatID, consts.BotInvalidCustomSpeedMsg)
+		h.send(msg)
+		// Возвращаем к выбору скорости
+		h.State.SetConfigStep(chatID, models.StepWaitingSpeed)
+		return
+	}
+
+	up, errUp := strconv.Atoi(parts[0])
+	down, errDown := strconv.Atoi(parts[1])
+
+	if errUp != nil || errDown != nil || up < 0 || down < 0 {
+		msg := tgbotapi.NewMessage(chatID, consts.BotInvalidCustomSpeedMsg)
+		h.send(msg)
+		// Возвращаем к выбору скорости
+		h.State.SetConfigStep(chatID, models.StepWaitingSpeed)
+		return
+	}
+
+	// Получаем данные из состояния
+	server, serverExists := h.State.GetUserServer(chatID)
+	if !serverExists {
 		log.Printf("[ERROR] [CHAT_ID:%d] Server address not found", chatID)
 		h.sendErrorMessage(chatID)
 		return
 	}
+
+	userName, nameExists := h.State.GetUserName(chatID)
+	if !nameExists {
+		log.Printf("[ERROR] [CHAT_ID:%d] User name not found", chatID)
+		h.sendErrorMessage(chatID)
+		return
+	}
+
+	h.State.SetUserSpeed(chatID, up, down)
 
 	password, err := generator.GeneratePassword()
 	if err != nil {
@@ -97,7 +175,15 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 		return
 	}
 
-	config, err := generator.GenerateConfig(userName, password, server)
+	h.generateAndSendConfig(chatID, userName, password, server, up, down)
+}
+
+func (h *Handler) generateAndSendConfig(chatID int64, userName, password, server string, up, down int) {
+	defer func() {
+		h.State.ClearUserConfigState(chatID)
+	}()
+
+	config, err := generator.GenerateConfig(userName, password, server, up, down)
 	if err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to generate config: %v", chatID, err)
 		h.sendErrorMessage(chatID)
@@ -129,6 +215,8 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 		Password: password,
 		Config:   config,
 		Server:   server,
+		Up:       up,
+		Down:     down,
 	}
 	if err := h.State.AddConfig(chatID, configData); err != nil {
 		if err == models.ErrConfigLimitExceeded {
@@ -144,7 +232,47 @@ func (h *Handler) HandleUserName(chatID int64, userName string) {
 
 	h.sendRetryButton(chatID)
 
-	log.Printf("[INFO] [CHAT_ID:%d] Config sent to user: %s (server: %s)", chatID, userName, server)
+	log.Printf("[INFO] [CHAT_ID:%d] Config sent to user: %s (server: %s, up: %d, down: %d)", chatID, userName, server, up, down)
+}
+
+func (h *Handler) sendInvalidSpeedMessage(chatID int64) {
+	msg := tgbotapi.NewMessage(chatID, consts.BotInvalidSpeedMsg)
+	h.send(msg)
+}
+
+func (h *Handler) HandleSpeedAuto(chatID int64) {
+	// Получаем данные из состояния
+	server, serverExists := h.State.GetUserServer(chatID)
+	if !serverExists {
+		log.Printf("[ERROR] [CHAT_ID:%d] Server address not found", chatID)
+		h.sendErrorMessage(chatID)
+		return
+	}
+
+	userName, nameExists := h.State.GetUserName(chatID)
+	if !nameExists {
+		log.Printf("[ERROR] [CHAT_ID:%d] User name not found", chatID)
+		h.sendErrorMessage(chatID)
+		return
+	}
+
+	// Автоматический режим (0, 0)
+	h.State.SetUserSpeed(chatID, 0, 0)
+
+	password, err := generator.GeneratePassword()
+	if err != nil {
+		log.Printf("[ERROR] [CHAT_ID:%d] Failed to generate password: %v", chatID, err)
+		h.sendErrorMessage(chatID)
+		return
+	}
+
+	h.generateAndSendConfig(chatID, userName, password, server, 0, 0)
+}
+
+func (h *Handler) HandleSpeedCustom(chatID int64) {
+	h.State.SetConfigStep(chatID, models.StepWaitingCustomSpeed)
+	msg := tgbotapi.NewMessage(chatID, consts.BotRequestCustomSpeedMsg)
+	h.send(msg)
 }
 
 func (h *Handler) HandleConfig(chatID int64) {
@@ -240,9 +368,29 @@ func (h *Handler) HandleCallback(callbackQuery *tgbotapi.CallbackQuery) {
 	chatID := callbackQuery.Message.Chat.ID
 
 	switch {
+	case callbackQuery.Data == "btn_goconfig":
+		h.HandleGoConfig(chatID)
+		h.answerCallback(callbackQuery.ID, "")
+
+	case callbackQuery.Data == "btn_config":
+		h.HandleConfig(chatID)
+		h.answerCallback(callbackQuery.ID, "")
+
+	case callbackQuery.Data == "btn_help":
+		h.HandleHelp(chatID)
+		h.answerCallback(callbackQuery.ID, "")
+
 	case callbackQuery.Data == "retry":
 		h.HandleGoConfig(chatID)
 		h.answerCallback(callbackQuery.ID, "")
+
+	case callbackQuery.Data == "speed_auto":
+		h.HandleSpeedAuto(chatID)
+		h.answerCallback(callbackQuery.ID, "Выбран автоматический режим")
+
+	case callbackQuery.Data == "speed_custom":
+		h.HandleSpeedCustom(chatID)
+		h.answerCallback(callbackQuery.ID, "Введите вашу скорость")
 
 	case strings.HasPrefix(callbackQuery.Data, "download_"):
 		var index int
@@ -306,6 +454,7 @@ func (h *Handler) sendRetryButton(chatID int64) {
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(consts.BotRetryButton, "retry"),
+			tgbotapi.NewInlineKeyboardButtonData("❗ Перейти к командам", "btn_help"),
 		),
 	)
 	msg := tgbotapi.NewMessage(chatID, "Хотите сгенерировать ещё один конфиг?")
