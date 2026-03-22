@@ -4,7 +4,6 @@ Telegram-бот для генерации YAML-конфигурационных 
 
 [![Go Build](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![Go Report](https://img.shields.io/badge/go%20report-A+-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
 
 ## Структура проекта
 
