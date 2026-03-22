@@ -37,7 +37,7 @@ const (
 // Сообщения бота
 const (
 	BotWelcomeMessage    = "Привет! Я бот для генерации конфигов Hysteria2.\n\n📋 Доступные команды:\n🔑 /goconfig — создать конфиг\n📁 /config — мои конфиги\n❓ /help — справка"
-	BotRequestServerMsg  = "🌐 Введите адрес сервера (например, 556kurumi.hs.vc):"
+	BotRequestServerMsg  = "🌐 Введите адрес сервера (например, Example.com):"
 	BotRequestNameMsg    = "👤 Введите имя пользователя для генерации конфига:"
 	BotConfigCreatedMsg  = "✅ Конфиг создан"
 	BotErrorGenericMsg   = "❌ Произошла ошибка при генерации конфига. Попробуйте позже."
