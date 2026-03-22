@@ -8,6 +8,31 @@ import (
 
 var ErrConfigLimitExceeded = errors.New("достигнут лимит конфигов на пользователя")
 
+// IsValidChatID проверяет корректность chatID
+// Telegram chatID может быть:
+// - Положительным (личные сообщения)
+// - Отрицательным (группы, супергруппы)
+// - Формата -100xxxxxxxxxx (каналы, супергруппы)
+func IsValidChatID(chatID int64) bool {
+	// Исключаем 0
+	if chatID == 0 {
+		return false
+	}
+
+	// Абсолютное значение должно быть разумным
+	absID := chatID
+	if absID < 0 {
+		absID = -absID
+	}
+
+	// Минимальный разумный chatID в Telegram
+	if absID < 10000 {
+		return false
+	}
+
+	return true
+}
+
 type ConfigStep int
 
 const (
@@ -35,35 +60,45 @@ type UserConfigState struct {
 }
 
 type BotState struct {
-	mu             sync.RWMutex
-	WaitingForName map[int64]bool
-	Configs        map[int64][]ConfigData
-	ConfigSteps    map[int64]ConfigStep
-	ConfigStates   map[int64]*UserConfigState
+	mu           sync.RWMutex
+	Configs      map[int64][]ConfigData
+	ConfigSteps  map[int64]ConfigStep
+	ConfigStates map[int64]*UserConfigState
 }
 
 func NewBotState() *BotState {
 	return &BotState{
-		WaitingForName: make(map[int64]bool),
-		Configs:        make(map[int64][]ConfigData),
-		ConfigSteps:    make(map[int64]ConfigStep),
-		ConfigStates:   make(map[int64]*UserConfigState),
+		Configs:      make(map[int64][]ConfigData),
+		ConfigSteps:  make(map[int64]ConfigStep),
+		ConfigStates: make(map[int64]*UserConfigState),
 	}
 }
 
 func (s *BotState) GetConfigStep(chatID int64) ConfigStep {
+	if !IsValidChatID(chatID) {
+		return StepNone
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.ConfigSteps[chatID]
 }
 
 func (s *BotState) SetConfigStep(chatID int64, step ConfigStep) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ConfigSteps[chatID] = step
 }
 
 func (s *BotState) SetUserServer(chatID int64, server string) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ConfigStates[chatID] == nil {
@@ -73,6 +108,10 @@ func (s *BotState) SetUserServer(chatID int64, server string) {
 }
 
 func (s *BotState) SetUserName(chatID int64, name string) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ConfigStates[chatID] == nil {
@@ -82,6 +121,10 @@ func (s *BotState) SetUserName(chatID int64, name string) {
 }
 
 func (s *BotState) SetUserSpeed(chatID int64, up, down int) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.ConfigStates[chatID] == nil {
@@ -92,6 +135,10 @@ func (s *BotState) SetUserSpeed(chatID int64, up, down int) {
 }
 
 func (s *BotState) GetUserServer(chatID int64) (string, bool) {
+	if !IsValidChatID(chatID) {
+		return "", false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	state, exists := s.ConfigStates[chatID]
@@ -102,6 +149,10 @@ func (s *BotState) GetUserServer(chatID int64) (string, bool) {
 }
 
 func (s *BotState) GetUserName(chatID int64) (string, bool) {
+	if !IsValidChatID(chatID) {
+		return "", false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	state, exists := s.ConfigStates[chatID]
@@ -112,6 +163,10 @@ func (s *BotState) GetUserName(chatID int64) (string, bool) {
 }
 
 func (s *BotState) GetUserSpeed(chatID int64) (int, int, bool) {
+	if !IsValidChatID(chatID) {
+		return 0, 0, false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	state, exists := s.ConfigStates[chatID]
@@ -122,25 +177,21 @@ func (s *BotState) GetUserSpeed(chatID int64) (int, int, bool) {
 }
 
 func (s *BotState) ClearUserConfigState(chatID int64) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.ConfigStates, chatID)
 	delete(s.ConfigSteps, chatID)
 }
 
-func (s *BotState) IsWaitingForName(chatID int64) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.WaitingForName[chatID]
-}
-
-func (s *BotState) SetWaitingForName(chatID int64, waiting bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.WaitingForName[chatID] = waiting
-}
-
 func (s *BotState) AddConfig(chatID int64, config ConfigData) error {
+	if !IsValidChatID(chatID) {
+		return ErrConfigLimitExceeded
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -153,6 +204,10 @@ func (s *BotState) AddConfig(chatID int64, config ConfigData) error {
 }
 
 func (s *BotState) GetConfigs(chatID int64) ([]ConfigData, bool) {
+	if !IsValidChatID(chatID) {
+		return nil, false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	configs, exists := s.Configs[chatID]
@@ -160,6 +215,10 @@ func (s *BotState) GetConfigs(chatID int64) ([]ConfigData, bool) {
 }
 
 func (s *BotState) GetConfigByIndex(chatID int64, index int) (ConfigData, bool) {
+	if !IsValidChatID(chatID) {
+		return ConfigData{}, false
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	configs, exists := s.Configs[chatID]
@@ -169,13 +228,39 @@ func (s *BotState) GetConfigByIndex(chatID int64, index int) (ConfigData, bool) 
 	return configs[index], true
 }
 
+// GetConfigByIndexCopy возвращает копию конфига для безопасного использования вне блокировки
+func (s *BotState) GetConfigByIndexCopy(chatID int64, index int) (ConfigData, bool) {
+	if !IsValidChatID(chatID) {
+		return ConfigData{}, false
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	configs, exists := s.Configs[chatID]
+	if !exists || index < 0 || index >= len(configs) {
+		return ConfigData{}, false
+	}
+
+	// Возвращаем копию структуры (ConfigData — value type, копируется автоматически)
+	return configs[index], true
+}
+
 func (s *BotState) ClearConfigs(chatID int64) {
+	if !IsValidChatID(chatID) {
+		return
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.Configs, chatID)
 }
 
 func (s *BotState) GetConfigsCount(chatID int64) int {
+	if !IsValidChatID(chatID) {
+		return 0
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.Configs[chatID])

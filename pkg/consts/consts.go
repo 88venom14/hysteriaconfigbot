@@ -3,7 +3,7 @@ package consts
 import "time"
 
 const (
-	PollingTimeout = 60
+	PollingTimeout = 60 * time.Second
 
 	HTTPTimeout         = 120 * time.Second
 	TLSHandshakeTimeout = 60 * time.Second
@@ -23,6 +23,9 @@ const (
 const (
 	MaxConfigsPerUser = 10
 )
+
+// DNS серверы по умолчанию
+var DefaultDNSServers = []string{"tls://77.88.8.8", "195.208.4.1"}
 
 // Скорости интернета в Мбит/с
 var SpeedOptions = []struct {

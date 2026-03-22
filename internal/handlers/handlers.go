@@ -236,8 +236,7 @@ func (h *Handler) generateAndSendConfig(chatID int64, userName, password, server
 }
 
 func (h *Handler) sendInvalidSpeedMessage(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, consts.BotInvalidSpeedMsg)
-	h.send(msg)
+	h.sendError(chatID, consts.BotInvalidSpeedMsg)
 }
 
 func (h *Handler) HandleSpeedAuto(chatID int64) {
@@ -346,7 +345,8 @@ func (h *Handler) HandleDownload(chatID int64, configIndex int) {
 		return
 	}
 
-	cfg, exists := h.State.GetConfigByIndex(chatID, configIndex)
+	// Получаем КОПИЮ конфига — данные безопасны после выхода из функции
+	cfg, exists := h.State.GetConfigByIndexCopy(chatID, configIndex)
 	if !exists {
 		log.Printf("[ERROR] [CHAT_ID:%d] Invalid config index: %d (not found)", chatID, configIndex)
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка: конфиг не найден или у вас нет доступа к нему")
@@ -354,6 +354,7 @@ func (h *Handler) HandleDownload(chatID int64, configIndex int) {
 		return
 	}
 
+	// Теперь можно безопасно использовать cfg, даже если оригинал будет удалён
 	if err := h.sendConfigFile(chatID, cfg.Name, cfg.Config); err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send config file: %v", chatID, err)
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка при отправке файла")
@@ -425,16 +426,21 @@ func (h *Handler) send(msg tgbotapi.Chattable) {
 }
 
 func (h *Handler) sendErrorMessage(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, consts.BotErrorGenericMsg)
-	if _, err := h.Bot.Send(msg); err != nil {
-		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send error message: %v", chatID, err)
-	}
+	h.sendError(chatID, consts.BotErrorGenericMsg)
 }
 
 func (h *Handler) sendConfigFile(chatID int64, userName, config string) error {
-	fileName := fmt.Sprintf("%s_config.yaml", userName)
+	// Санитизируем имя файла перед использованием
+	safeName := generator.SanitizeFileName(userName)
+	fileName := fmt.Sprintf("%s_config.yaml", safeName)
 	tmpDir := os.TempDir()
 	tmpFilePath := filepath.Join(tmpDir, fileName)
+
+	// Дополнительно проверяем, что путь остаётся внутри temp-директории
+	cleanPath := filepath.Clean(tmpFilePath)
+	if !strings.HasPrefix(cleanPath, filepath.Clean(tmpDir)) {
+		return fmt.Errorf("invalid file path: %s", tmpFilePath)
+	}
 
 	if err := os.WriteFile(tmpFilePath, []byte(config), 0644); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
@@ -448,6 +454,19 @@ func (h *Handler) sendConfigFile(chatID int64, userName, config string) error {
 	}
 
 	return nil
+}
+
+// sendError отправляет сообщение об ошибке пользователю
+func (h *Handler) sendError(chatID int64, message string) {
+	msg := tgbotapi.NewMessage(chatID, message)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	h.send(msg)
+}
+
+// sendAndLogError отправляет ошибку и логирует её
+func (h *Handler) sendAndLogError(chatID int64, logMsg string, userMsg string) {
+	log.Print(logMsg)
+	h.sendError(chatID, userMsg)
 }
 
 func (h *Handler) sendRetryButton(chatID int64) {

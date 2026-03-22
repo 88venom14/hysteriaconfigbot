@@ -5,10 +5,37 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hysconfigbot/pkg/consts"
-	"io"
 	"strings"
 	"text/template"
 )
+
+// SanitizeFileName удаляет опасные символы из имени файла
+// Возвращает безопасное имя для использования в файловой системе
+func SanitizeFileName(name string) string {
+	// Заменяем потенциально опасные символы
+	sanitized := strings.ReplaceAll(name, "/", "")
+	sanitized = strings.ReplaceAll(sanitized, "\\", "")
+	sanitized = strings.ReplaceAll(sanitized, "..", "")
+	sanitized = strings.ReplaceAll(sanitized, "\x00", "") // null byte
+
+	// Оставляем только безопасные символы: буквы, цифры, дефис, подчёркивание
+	var result strings.Builder
+	for _, r := range sanitized {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			result.WriteRune(r)
+		} else {
+			result.WriteRune('_') // Заменяем небезопасные символы на _
+		}
+	}
+
+	// Гарантируем непустое имя
+	if result.Len() == 0 {
+		return "config"
+	}
+
+	return result.String()
+}
 
 const ConfigTemplate = `mixed-port: 7890
 allow-lan: true
@@ -53,9 +80,9 @@ dns:
   listen: 127.0.0.1:6868
   ipv6: false
   enhanced-mode: redir-host
-  default-nameserver: [tls://77.88.8.8, 195.208.4.1]
-  proxy-server-nameserver: [tls://77.88.8.8, 195.208.4.1]
-  direct-nameserver: [tls://77.88.8.8, 195.208.4.1]
+  default-nameserver: [{{range $i, $dns := .DNSServers}}{{if $i}}, {{end}}{{$dns}}{{end}}]
+  proxy-server-nameserver: [{{range $i, $dns := .DNSServers}}{{if $i}}, {{end}}{{$dns}}{{end}}]
+  direct-nameserver: [{{range $i, $dns := .DNSServers}}{{if $i}}, {{end}}{{$dns}}{{end}}]
   nameserver: [https://cloudflare-dns.com/dns-query]
 
 proxies:
@@ -106,16 +133,17 @@ rules:
 `
 
 type ConfigParams struct {
-	Server   string
-	Port     int
-	Password string
-	Up       int
-	Down     int
+	Server     string
+	Port       int
+	Password   string
+	Up         int
+	Down       int
+	DNSServers []string
 }
 
 func GeneratePassword() (string, error) {
 	bytes := make([]byte, consts.PasswordByteLength)
-	if _, err := io.ReadFull(rand.Reader, bytes); err != nil {
+	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
@@ -125,11 +153,12 @@ func GenerateConfig(userName, password, server string, up, down int) (string, er
 	passwordField := fmt.Sprintf("%s:%s", userName, password)
 
 	params := ConfigParams{
-		Server:   server,
-		Port:     consts.DefaultPort,
-		Password: passwordField,
-		Up:       up,
-		Down:     down,
+		Server:     server,
+		Port:       consts.DefaultPort,
+		Password:   passwordField,
+		Up:         up,
+		Down:       down,
+		DNSServers: consts.DefaultDNSServers,
 	}
 
 	tmpl, err := template.New("config").Parse(ConfigTemplate)
