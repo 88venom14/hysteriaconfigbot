@@ -9,28 +9,8 @@ import (
 var ErrConfigLimitExceeded = errors.New("достигнут лимит конфигов на пользователя")
 
 // IsValidChatID проверяет корректность chatID
-// Telegram chatID может быть:
-// - Положительным (личные сообщения)
-// - Отрицательным (группы, супергруппы)
-// - Формата -100xxxxxxxxxx (каналы, супергруппы)
 func IsValidChatID(chatID int64) bool {
-	// Исключаем 0
-	if chatID == 0 {
-		return false
-	}
-
-	// Абсолютное значение должно быть разумным
-	absID := chatID
-	if absID < 0 {
-		absID = -absID
-	}
-
-	// Минимальный разумный chatID в Telegram
-	if absID < 10000 {
-		return false
-	}
-
-	return true
+	return chatID != 0
 }
 
 type ConfigStep int
@@ -162,20 +142,6 @@ func (s *BotState) GetUserName(chatID int64) (string, bool) {
 	return state.Name, true
 }
 
-func (s *BotState) GetUserSpeed(chatID int64) (int, int, bool) {
-	if !IsValidChatID(chatID) {
-		return 0, 0, false
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	state, exists := s.ConfigStates[chatID]
-	if !exists || state == nil {
-		return 0, 0, false
-	}
-	return state.Up, state.Down, true
-}
-
 func (s *BotState) ClearUserConfigState(chatID int64) {
 	if !IsValidChatID(chatID) {
 		return
@@ -225,24 +191,6 @@ func (s *BotState) GetConfigByIndex(chatID int64, index int) (ConfigData, bool) 
 	if !exists || index < 0 || index >= len(configs) {
 		return ConfigData{}, false
 	}
-	return configs[index], true
-}
-
-// GetConfigByIndexCopy возвращает копию конфига для безопасного использования вне блокировки
-func (s *BotState) GetConfigByIndexCopy(chatID int64, index int) (ConfigData, bool) {
-	if !IsValidChatID(chatID) {
-		return ConfigData{}, false
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	configs, exists := s.Configs[chatID]
-	if !exists || index < 0 || index >= len(configs) {
-		return ConfigData{}, false
-	}
-
-	// Возвращаем копию структуры (ConfigData — value type, копируется автоматически)
 	return configs[index], true
 }
 

@@ -141,6 +141,17 @@ type ConfigParams struct {
 	DNSServers []string
 }
 
+// configTemplate кэширует скомпилированный шаблон
+var configTemplate *template.Template
+
+func init() {
+	var err error
+	configTemplate, err = template.New("config").Parse(ConfigTemplate)
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse config template: %v", err))
+	}
+}
+
 func GeneratePassword() (string, error) {
 	bytes := make([]byte, consts.PasswordByteLength)
 	if _, err := rand.Read(bytes); err != nil {
@@ -161,13 +172,8 @@ func GenerateConfig(userName, password, server string, up, down int) (string, er
 		DNSServers: consts.DefaultDNSServers,
 	}
 
-	tmpl, err := template.New("config").Parse(ConfigTemplate)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
-	}
-
 	var builder strings.Builder
-	if err := tmpl.Execute(&builder, params); err != nil {
+	if err := configTemplate.Execute(&builder, params); err != nil {
 		return "", fmt.Errorf("failed to execute template: %w", err)
 	}
 
@@ -191,6 +197,26 @@ func IsValidServerAddress(server string) bool {
 		return false
 	}
 
+	// Запретить символы template injection
+	if strings.ContainsAny(server, "{}") {
+		return false
+	}
+
+	// Домен не должен начинаться или заканчиваться на дефис/подчёркивание
+	if len(server) > 0 {
+		first := server[0]
+		last := server[len(server)-1]
+		if first == '-' || first == '_' || last == '-' || last == '_' {
+			return false
+		}
+	}
+
+	// Нет двойных точек
+	if strings.Contains(server, "..") {
+		return false
+	}
+
+	// Разрешаем: буквы, цифры, точки, дефисы, подчёркивания
 	for _, r := range server {
 		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 			(r >= '0' && r <= '9') || r == '.' || r == '-' || r == '_') {

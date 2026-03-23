@@ -3,8 +3,6 @@ package handlers
 import (
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -15,24 +13,39 @@ import (
 	"hysconfigbot/pkg/models"
 )
 
+// BotAPI - интерфейс для Telegram Bot API (для упрощения тестирования)
+type BotAPI interface {
+	Send(msg tgbotapi.Chattable) (tgbotapi.Message, error)
+	Request(req tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
+}
+
+// Handler обрабатывает команды бота
 type Handler struct {
-	Bot   *tgbotapi.BotAPI
+	Bot   BotAPI
 	State *models.BotState
 }
 
-func NewHandler(bot *tgbotapi.BotAPI, state *models.BotState) *Handler {
+// escapeMarkdown экранирует специальные символы для Markdown
+func escapeMarkdown(text string) string {
+	// Экранируем только те символы, которые интерпретируются в Markdown Telegram
+	special := []string{"_", "*", "`", "[", "(", ")"}
+	result := text
+	for _, s := range special {
+		result = strings.ReplaceAll(result, s, "\\"+s)
+	}
+	return result
+}
+
+func NewHandler(bot BotAPI, state *models.BotState) *Handler {
 	return &Handler{
 		Bot:   bot,
 		State: state,
 	}
 }
 
-func (h *Handler) HandleStart(chatID int64) {
-	msg := tgbotapi.NewMessage(chatID, consts.BotWelcomeMessage)
-	msg.ParseMode = tgbotapi.ModeMarkdown
-
-	// Создаём inline-кнопки под сообщением
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+// createMainKeyboard создаёт основную клавиатуру бота
+func (h *Handler) createMainKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔑 Создать конфиг", "btn_goconfig"),
 			tgbotapi.NewInlineKeyboardButtonData("📁 Мои конфиги", "btn_config"),
@@ -41,24 +54,19 @@ func (h *Handler) HandleStart(chatID int64) {
 			tgbotapi.NewInlineKeyboardButtonData("❓ Справка", "btn_help"),
 		),
 	)
-	msg.ReplyMarkup = keyboard
+}
 
+func (h *Handler) HandleStart(chatID int64) {
+	msg := tgbotapi.NewMessage(chatID, consts.BotWelcomeMessage)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyMarkup = h.createMainKeyboard()
 	h.send(msg)
 }
 
 func (h *Handler) HandleHelp(chatID int64) {
 	msg := tgbotapi.NewMessage(chatID, consts.BotHelpMessage)
 	msg.ParseMode = tgbotapi.ModeMarkdown
-
-	// Создаём inline-кнопки под сообщением
-	keyboard := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔑 Создать конфиг", "btn_goconfig"),
-			tgbotapi.NewInlineKeyboardButtonData("📁 Мои конфиги", "btn_config"),
-		),
-	)
-	msg.ReplyMarkup = keyboard
-
+	msg.ReplyMarkup = h.createMainKeyboard()
 	h.send(msg)
 }
 
@@ -190,26 +198,26 @@ func (h *Handler) generateAndSendConfig(chatID int64, userName, password, server
 		return
 	}
 
+	// Объединяем credentials и config в одно сообщение
 	credentialsMsg := fmt.Sprintf("%s: %s", userName, password)
-	msg := tgbotapi.NewMessage(chatID, fmt.Sprintf("%s\n\n%s", consts.BotConfigCreatedMsg, credentialsMsg))
+	msg := tgbotapi.NewMessage(chatID,
+		fmt.Sprintf("%s\n\n%s\n\n```yaml\n%s\n```",
+			consts.BotConfigCreatedMsg, credentialsMsg, config))
+	msg.ParseMode = tgbotapi.ModeMarkdown
 	if _, err := h.Bot.Send(msg); err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send credentials: %v", chatID, err)
 		h.sendErrorMessage(chatID)
 		return
 	}
 
-	configCodeMsg := tgbotapi.NewMessage(chatID, fmt.Sprintf("```yaml\n%s\n```", config))
-	configCodeMsg.ParseMode = tgbotapi.ModeMarkdown
-	if _, err := h.Bot.Send(configCodeMsg); err != nil {
-		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send config as code block: %v", chatID, err)
-	}
-
+	// Отправляем файл
 	if err := h.sendConfigFile(chatID, userName, config); err != nil {
 		log.Printf("[ERROR] [CHAT_ID:%d] Failed to send config file: %v", chatID, err)
 		h.sendErrorMessage(chatID)
 		return
 	}
 
+	// Сохраняем конфиг
 	configData := models.ConfigData{
 		Name:     userName,
 		Password: password,
@@ -233,10 +241,6 @@ func (h *Handler) generateAndSendConfig(chatID int64, userName, password, server
 	h.sendRetryButton(chatID)
 
 	log.Printf("[INFO] [CHAT_ID:%d] Config sent to user: %s (server: %s, up: %d, down: %d)", chatID, userName, server, up, down)
-}
-
-func (h *Handler) sendInvalidSpeedMessage(chatID int64) {
-	h.sendError(chatID, consts.BotInvalidSpeedMsg)
 }
 
 func (h *Handler) HandleSpeedAuto(chatID int64) {
@@ -288,12 +292,12 @@ func (h *Handler) HandleConfig(chatID int64) {
 
 	var keyboardRows [][]tgbotapi.InlineKeyboardButton
 	for i, cfg := range configs {
-		configList.WriteString(fmt.Sprintf("🔹 **%s**: `%s`\n", cfg.Name, cfg.Password))
-		configList.WriteString(fmt.Sprintf("   🌐 Сервер: `%s`\n\n", cfg.Server))
+		configList.WriteString(fmt.Sprintf("🔹 **%s**: `%s`\n", escapeMarkdown(cfg.Name), escapeMarkdown(cfg.Password)))
+		configList.WriteString(fmt.Sprintf("   🌐 Сервер: `%s`\n\n", escapeMarkdown(cfg.Server)))
 
 		button := tgbotapi.NewInlineKeyboardButtonData(
-			fmt.Sprintf("📥 %s_config.yaml", cfg.Name),
-			fmt.Sprintf("download_%d", i),
+			fmt.Sprintf("📥 %s.yaml", cfg.Name),
+			fmt.Sprintf("%d", i),
 		)
 		keyboardRows = append(keyboardRows, tgbotapi.NewInlineKeyboardRow(button))
 	}
@@ -346,7 +350,7 @@ func (h *Handler) HandleDownload(chatID int64, configIndex int) {
 	}
 
 	// Получаем КОПИЮ конфига — данные безопасны после выхода из функции
-	cfg, exists := h.State.GetConfigByIndexCopy(chatID, configIndex)
+	cfg, exists := h.State.GetConfigByIndex(chatID, configIndex)
 	if !exists {
 		log.Printf("[ERROR] [CHAT_ID:%d] Invalid config index: %d (not found)", chatID, configIndex)
 		msg := tgbotapi.NewMessage(chatID, "❌ Ошибка: конфиг не найден или у вас нет доступа к нему")
@@ -432,27 +436,20 @@ func (h *Handler) sendErrorMessage(chatID int64) {
 func (h *Handler) sendConfigFile(chatID int64, userName, config string) error {
 	// Санитизируем имя файла перед использованием
 	safeName := generator.SanitizeFileName(userName)
-	fileName := fmt.Sprintf("%s_config.yaml", safeName)
-	tmpDir := os.TempDir()
-	tmpFilePath := filepath.Join(tmpDir, fileName)
+	fileName := fmt.Sprintf("%s.yaml", safeName)
 
-	// Дополнительно проверяем, что путь остаётся внутри temp-директории
-	cleanPath := filepath.Clean(tmpFilePath)
-	if !strings.HasPrefix(cleanPath, filepath.Clean(tmpDir)) {
-		return fmt.Errorf("invalid file path: %s", tmpFilePath)
-	}
+	// Используем FileBytes для отправки из памяти (без записи на диск)
+	doc := tgbotapi.NewDocument(chatID, tgbotapi.FileBytes{
+		Name:  fileName,
+		Bytes: []byte(config),
+	})
 
-	if err := os.WriteFile(tmpFilePath, []byte(config), 0644); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-	defer os.Remove(tmpFilePath)
-
-	doc := tgbotapi.NewDocument(chatID, tgbotapi.FilePath(tmpFilePath))
 	_, err := h.Bot.Send(doc)
 	if err != nil {
 		return fmt.Errorf("failed to send document: %w", err)
 	}
 
+	log.Printf("[INFO] [CHAT_ID:%d] Config sent: %s", chatID, safeName)
 	return nil
 }
 
@@ -461,12 +458,6 @@ func (h *Handler) sendError(chatID int64, message string) {
 	msg := tgbotapi.NewMessage(chatID, message)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	h.send(msg)
-}
-
-// sendAndLogError отправляет ошибку и логирует её
-func (h *Handler) sendAndLogError(chatID int64, logMsg string, userMsg string) {
-	log.Print(logMsg)
-	h.sendError(chatID, userMsg)
 }
 
 func (h *Handler) sendRetryButton(chatID int64) {

@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -96,15 +96,20 @@ func main() {
 	handler := handlers.NewHandler(bot, botState)
 
 	updateConfig := tgbotapi.NewUpdate(0)
-	updateConfig.Timeout = int(consts.PollingTimeout.Seconds())
+	updateConfig.Timeout = int(consts.PollingTimeout / time.Second)
 	updates := bot.GetUpdatesChan(updateConfig)
 
 	// Канал для сигналов завершения
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// WaitGroup для ожидания завершения горутины
+	var wg sync.WaitGroup
+
 	// Запуск обработки сообщений в горутине
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for update := range updates {
 			if update.CallbackQuery != nil {
 				handler.HandleCallback(update.CallbackQuery)
@@ -127,6 +132,27 @@ func main() {
 			}
 
 			step := botState.GetConfigStep(chatID)
+
+			// Обработка команд независимо от шага
+			switch {
+			case text == "/start":
+				handler.HandleStart(chatID)
+				continue
+			case text == "/help":
+				handler.HandleHelp(chatID)
+				continue
+			case text == "/config":
+				handler.HandleConfig(chatID)
+				continue
+			case text == "/goconfig":
+				handler.HandleGoConfig(chatID)
+				continue
+			case text == "/stop":
+				handler.HandleStop(chatID)
+				continue
+			}
+
+			// Обработка шагов создания конфига
 			switch step {
 			case models.StepWaitingServer:
 				server := strings.TrimSpace(text)
@@ -164,16 +190,8 @@ func main() {
 				continue
 			}
 
-			switch {
-			case text == "/start":
-				handler.HandleStart(chatID)
-			case text == "/help":
-				handler.HandleHelp(chatID)
-			case text == "/config":
-				handler.HandleConfig(chatID)
-			case text == "/goconfig":
-				handler.HandleGoConfig(chatID)
-			default:
+			// Если шаг не определён — показываем подсказку
+			if step == models.StepNone {
 				msg := tgbotapi.NewMessage(chatID, "Используйте /goconfig для создания конфига")
 				bot.Send(msg)
 			}
@@ -187,10 +205,19 @@ func main() {
 	// Закрываем канал обновлений
 	bot.StopReceivingUpdates()
 
-	// Даём время на завершение текущих операций
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// Ждём завершения горутины обработки
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
 
-	<-ctx.Done()
+	select {
+	case <-done:
+		log.Printf("[INFO] All messages processed")
+	case <-time.After(5 * time.Second):
+		log.Printf("[WARN] Shutdown timeout exceeded")
+	}
+
 	log.Printf("[INFO] Bot stopped")
 }
