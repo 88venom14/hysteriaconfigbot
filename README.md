@@ -168,7 +168,6 @@ proxies:
     password: "alice:a3f5b8c9d2e1f4a7b6c8d9e0f1a2b3c4"
     up: 300
     down: 300
-```
 
 [Файл: alice.yaml]
 ```
